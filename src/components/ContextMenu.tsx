@@ -1,15 +1,12 @@
 import React, { useEffect, useRef } from 'react'
 import {
   Sliders,
-  FolderSync,
-  Scissors,
   HardDrive,
   Trash2,
   Eraser,
   Tag,
   CheckCircle,
   ShieldAlert,
-  Copy,
   Plus,
 } from 'lucide-react'
 
@@ -70,13 +67,6 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
             <Plus className="w-4 h-4 text-blue-600" />
             <span>Create Partition...</span>
           </button>
-          <button
-            onClick={() => onAction('wipe', state.target)}
-            className="w-full text-left px-3 py-[5px] text-xs font-medium flex items-center gap-2.5 text-slate-700 hover:bg-slate-50 transition-colors"
-          >
-            <Eraser className="w-4 h-4 text-slate-500" />
-            <span>Wipe Free Space...</span>
-          </button>
         </>
       )
     }
@@ -85,33 +75,11 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
       return (
         <>
           <button
-            onClick={() => onAction('clone', state.target)}
-            className="w-full text-left px-3 py-[5px] text-xs font-medium flex items-center gap-2.5 text-slate-700 hover:bg-blue-50 hover:text-blue-700 transition-colors"
-          >
-            <Copy className="w-4 h-4 text-blue-600" />
-            <span>Clone Disk...</span>
-          </button>
-          <button
             onClick={() => onAction('convert_gpt', state.target)}
             className="w-full text-left px-3 py-[5px] text-xs font-medium flex items-center gap-2.5 text-slate-700 hover:bg-blue-50 hover:text-blue-700 transition-colors"
           >
             <HardDrive className="w-4 h-4 text-emerald-600" />
             <span>Convert to {state.target?.partitionStyle === 'GPT' ? 'MBR' : 'GPT'} Disk</span>
-          </button>
-          <button
-            onClick={() => onAction('rebuild_mbr', state.target)}
-            className="w-full text-left px-3 py-[5px] text-xs font-medium flex items-center gap-2.5 text-slate-700 hover:bg-blue-50 hover:text-blue-700 transition-colors"
-          >
-            <ShieldAlert className="w-4 h-4 text-amber-600" />
-            <span>Rebuild MBR...</span>
-          </button>
-          <div className="my-1 border-t border-slate-100" />
-          <button
-            onClick={() => onAction('wipe', state.target)}
-            className="w-full text-left px-3 py-[5px] text-xs font-medium flex items-center gap-2.5 text-amber-700 hover:bg-amber-50 transition-colors"
-          >
-            <Eraser className="w-4 h-4 text-amber-600" />
-            <span>Wipe Disk...</span>
           </button>
         </>
       )
@@ -125,21 +93,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
           className="w-full text-left px-3.5 py-2 text-xs font-semibold flex items-center gap-2.5 text-blue-700 hover:bg-blue-50 transition-colors"
         >
           <Sliders className="w-4 h-4 text-blue-600" />
-          <span>Resize / Move...</span>
-        </button>
-        <button
-          onClick={() => onAction('merge', state.target)}
-          className="w-full text-left px-3 py-[5px] text-xs font-medium flex items-center gap-2.5 text-slate-700 hover:bg-slate-50 transition-colors"
-        >
-          <FolderSync className="w-4 h-4 text-slate-500" />
-          <span>Merge Partitions...</span>
-        </button>
-        <button
-          onClick={() => onAction('split', state.target)}
-          className="w-full text-left px-3 py-[5px] text-xs font-medium flex items-center gap-2.5 text-slate-700 hover:bg-slate-50 transition-colors"
-        >
-          <Scissors className="w-4 h-4 text-slate-500" />
-          <span>Split Partition...</span>
+          <span>Resize...</span>
         </button>
         <button
           onClick={() => onAction('format', state.target)}

@@ -61,7 +61,7 @@ export const PendingOpsPanel: React.FC<PendingOpsPanelProps> = ({
 
       {operations.length === 0 ? (
         <div className="px-4 py-4 text-[12px] text-slate-500 leading-relaxed max-w-[72ch]">
-          No staged operations. Resize, format, delete, or clone actions are queued here first.
+          No staged operations. Resize, create, format and delete actions are queued here first.
           <span className="text-slate-700 font-semibold"> Nothing touches the disk until you press Apply.</span>
         </div>
       ) : (

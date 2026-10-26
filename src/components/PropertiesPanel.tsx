@@ -3,15 +3,12 @@ import {
   Sliders,
   HardDrive,
   Trash2,
-  FolderSync,
-  Scissors,
   Eraser,
   Tag,
   CheckCircle2,
   AlertTriangle,
   ShieldCheck,
   Cpu,
-  Layers,
   Thermometer,
 } from 'lucide-react'
 import { Disk, Partition } from '../types/partition'
@@ -187,26 +184,8 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                     className="w-full h-11 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-semibold text-sm flex items-center justify-center gap-2.5 cursor-pointer shadow-sm transition-all"
                   >
                     <Sliders className="w-4 h-4" />
-                    <span>Resize / Move Partition</span>
+                    <span>Resize Partition</span>
                   </button>
-
-                  {/* Standard Operations Grid (h-10 proportional buttons) */}
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      onClick={() => onOpenModal('merge', selectedPartition)}
-                      className="h-10 px-3 rounded-lg border border-slate-200/90 bg-white hover:bg-slate-50 hover:border-slate-300 text-slate-700 text-xs font-semibold flex items-center gap-2 cursor-pointer shadow-2xs transition-all"
-                    >
-                      <FolderSync className="w-4 h-4 text-blue-600 shrink-0" />
-                      <span>Merge...</span>
-                    </button>
-                    <button
-                      onClick={() => onOpenModal('split', selectedPartition)}
-                      className="h-10 px-3 rounded-lg border border-slate-200/90 bg-white hover:bg-slate-50 hover:border-slate-300 text-slate-700 text-xs font-semibold flex items-center gap-2 cursor-pointer shadow-2xs transition-all"
-                    >
-                      <Scissors className="w-4 h-4 text-indigo-600 shrink-0" />
-                      <span>Split...</span>
-                    </button>
-                  </div>
 
                   <div className="grid grid-cols-2 gap-2">
                     <button
@@ -313,31 +292,17 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
               </h4>
 
               <button
-                onClick={() => onOpenModal('clone', selectedDisk)}
-                className="w-full h-11 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm flex items-center justify-center gap-2.5 cursor-pointer shadow-sm transition-all"
+                onClick={() => onOpenModal('convert_gpt', selectedDisk)}
+                className="w-full h-10 px-3 rounded-lg border border-slate-200/90 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold flex items-center justify-center gap-2 cursor-pointer shadow-2xs transition-all"
               >
-                <Layers className="w-4 h-4" />
-                <span>Clone Disk Wizard</span>
+                <HardDrive className="w-4 h-4 text-slate-500 shrink-0" />
+                <span>
+                  Convert to {selectedDisk.partitionStyle === 'GPT' ? 'MBR' : 'GPT'} (empty disk only)
+                </span>
               </button>
-
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  onClick={() => onOpenModal('wipe', selectedDisk)}
-                  className="h-10 px-3 rounded-lg border border-amber-200 bg-amber-50/80 hover:bg-amber-100 text-amber-900 text-xs font-semibold flex items-center gap-2 cursor-pointer shadow-2xs transition-all"
-                >
-                  <Eraser className="w-4 h-4 text-amber-700 shrink-0" />
-                  <span>Wipe Disk</span>
-                </button>
-                <button
-                  onClick={() => onOpenModal('convert_gpt', selectedDisk)}
-                  className="h-10 px-3 rounded-lg border border-slate-200/90 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold flex items-center gap-2 cursor-pointer shadow-2xs transition-all"
-                >
-                  <HardDrive className="w-4 h-4 text-slate-500 shrink-0" />
-                  <span>
-                    Convert to {selectedDisk.partitionStyle === 'GPT' ? 'MBR' : 'GPT'}
-                  </span>
-                </button>
-              </div>
+              <p className="text-[11px] text-slate-400 leading-snug">
+                Conversion is only offered for disks with no partitions, so existing data can never be destroyed by it.
+              </p>
             </div>
           </>
         )}

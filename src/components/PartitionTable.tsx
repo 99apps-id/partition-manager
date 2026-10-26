@@ -214,7 +214,7 @@ export const PartitionTable: React.FC<PartitionTableProps> = ({
                         <>
                           <button
                             onClick={() => onOpenModal('resize_move', part)}
-                            title="Resize / Move Volume"
+                            title="Resize Volume"
                             className="h-7 px-2.5 rounded-md bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 font-semibold text-xs flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
                           >
                             <Sliders className="w-3 h-3" />

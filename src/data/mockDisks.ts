@@ -18,15 +18,6 @@ export const initialDisks: Disk[] = [
     powerCycleCount: 512,
     totalBytesWrittenTB: 14.8,
     expanded: true,
-    benchmark: {
-      readSeqMBs: 6980,
-      writeSeqMBs: 5020,
-      read4kMBs: 82.5,
-      write4kMBs: 215.4,
-      read4kIOPS: 850000,
-      write4kIOPS: 640000,
-      latencyMs: 0.03,
-    },
     partitions: [
       {
         id: 'p0-1',
@@ -149,15 +140,6 @@ export const initialDisks: Disk[] = [
     powerCycleCount: 1420,
     totalBytesWrittenTB: 86.4,
     expanded: true,
-    benchmark: {
-      readSeqMBs: 182,
-      writeSeqMBs: 174,
-      read4kMBs: 1.2,
-      write4kMBs: 1.8,
-      read4kIOPS: 290,
-      write4kIOPS: 430,
-      latencyMs: 14.2,
-    },
     partitions: [
       {
         id: 'p1-1',
@@ -242,15 +224,6 @@ export const initialDisks: Disk[] = [
     powerCycleCount: 88,
     totalBytesWrittenTB: 1.2,
     expanded: true,
-    benchmark: {
-      readSeqMBs: 980,
-      writeSeqMBs: 840,
-      read4kMBs: 24.1,
-      write4kMBs: 48.6,
-      read4kIOPS: 6200,
-      write4kIOPS: 12400,
-      latencyMs: 0.12,
-    },
     partitions: [
       {
         id: 'p2-1',

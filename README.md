@@ -32,15 +32,21 @@ The app now ships as a **Tauri 2 desktop application** with a Rust backend
 
 ## Safety model
 
-- Inspecting disks works without elevation.
-- Applying changes requires running the app **as administrator**; the app
-  shows the current elevation state in the status bar and banner, and the
-  backend refuses write operations when not elevated.
+- The app **requests administrator rights at launch**: its embedded Windows
+  manifest (`src-tauri/app.manifest`, `requireAdministrator`) makes Windows
+  show the UAC consent prompt before the app opens, like other partition
+  tools. If the user declines, the app does not start, instead of starting
+  powerless and failing mysteriously later.
+- As a second line of defense, the backend still checks elevation before
+  every write batch and refuses with an explicit error; the UI also shows the
+  elevation state in the status bar and a banner. Read or enumeration errors
+  are surfaced in the UI as well. Nothing fails silently.
 - Partition-table conversion (GPT/MBR) is only allowed on an **empty** disk,
   to prevent accidental data loss.
-- Operations the backend cannot do safely report a clear per-operation error
-  instead of pretending to succeed: merge, split, clone, 4K realignment, MBR
-  boot-code rebuild (requires WinRE), and whole-disk wipe.
+- Tools the backend cannot execute for real are not in the UI at all (this
+  app does not ship buttons that fail or fake success): merge, split, clone,
+  4K realignment, MBR boot-code rebuild, whole-disk wipe, surface test, and
+  benchmark were removed; resizing cannot move a partition's start offset.
 - Moving a partition's start offset is not supported; resizing its end is.
 
 ## Running
@@ -58,8 +64,8 @@ Both desktop commands first regenerate the app icons into `src-tauri/icons/`
 from `public/partition-manager-icon.png` (`npm run gen:icons`), because icon
 files are binary build artifacts and are not committed to the repository.
 
-Right-click the app and choose "Run as administrator" when you want to apply
-changes.
+Windows will ask for administrator permission (UAC) every time the app
+starts; that prompt is expected and required for partition changes.
 
 Running plain `npm run dev` opens the UI in a browser in **demo mode**:
 sample data, clearly labeled, with simulated operations. It exists for UI

@@ -614,20 +614,13 @@ fn build_op_script(op: &BackendOp) -> Result<String, String> {
                 "Format-Volume -DriveLetter {letter} -Confirm:$false -Full -ErrorAction Stop; 'OK'"
             ))
         }
-        "chkdsk" => Err("__handled_by_chkdsk__".to_string()),
-        "merge" | "split" | "clone" | "clone_disk" | "clone_partition" => Err(format!(
-            "The '{}' operation is not supported by this build of the Windows backend yet. It was not executed.",
-            op.kind
+        // The frontend only offers operations this backend can really
+        // execute (merge/split/clone/alignment/rebuild-MBR tools were removed
+        // from the UI rather than failing or faking success). Anything else
+        // arriving here is a programming error and is reported as such.
+        other => Err(format!(
+            "Unsupported operation type: {other}. It was not executed."
         )),
-        "align_4k" => Err(
-            "Changing partition alignment requires moving existing data and is not supported by this build. It was not executed."
-                .to_string(),
-        ),
-        "rebuild_mbr" => Err(
-            "Rebuilding the MBR boot code requires booting into the Windows Recovery Environment (bootrec /fixmbr). It cannot be done safely from a running Windows session and was not executed."
-                .to_string(),
-        ),
-        other => Err(format!("Unknown operation type: {other}")),
     }
 }
 

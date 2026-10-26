@@ -7,7 +7,7 @@ interface ResizeMoveModalProps {
   disk: Disk
   partition: Partition
   onClose: () => void
-  onConfirm: (params: { sizeGB: number; spaceBeforeGB: number; spaceAfterGB: number }) => void
+  onConfirm: (params: { sizeGB: number; spaceAfterGB: number }) => void
 }
 
 export const ResizeMoveModal: React.FC<ResizeMoveModalProps> = ({
@@ -24,23 +24,20 @@ export const ResizeMoveModal: React.FC<ResizeMoveModalProps> = ({
   const maxSize = partition.sizeGB + unallocatedPool
 
   const [sizeGB, setSizeGB] = useState(partition.sizeGB)
-  const [spaceBeforeGB, setSpaceBeforeGB] = useState(0)
-  const [spaceAfterGB, setSpaceAfterGB] = useState(Math.max(0, unallocatedPool - (sizeGB - partition.sizeGB)))
+  // Free space after the partition once resized: the existing unallocated
+  // pool plus whatever shrinking releases (negative when growing into it).
+  const spaceAfterGB = Math.max(0, unallocatedPool - (sizeGB - partition.sizeGB))
   useDismissModal(onClose)
 
   const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newSize = parseFloat(e.target.value)
-    setSizeGB(newSize)
-    const remaining = Math.max(0, unallocatedPool - (newSize - partition.sizeGB))
-    setSpaceAfterGB(parseFloat(remaining.toFixed(1)))
+    setSizeGB(parseFloat(e.target.value))
   }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     onConfirm({
       sizeGB,
-      spaceBeforeGB,
-      spaceAfterGB,
+      spaceAfterGB: parseFloat(spaceAfterGB.toFixed(1)),
     })
   }
 
@@ -57,7 +54,7 @@ export const ResizeMoveModal: React.FC<ResizeMoveModalProps> = ({
           <div className="flex items-center gap-2">
             <Sliders className="w-4 h-4 text-blue-600" />
             <div>
-              <h3 className="text-sm font-bold text-slate-900">Resize / Move Partition</h3>
+              <h3 className="text-sm font-bold text-slate-900">Resize Partition</h3>
               <p className="text-xs text-slate-500">
                 {partition.letter || ''} {partition.name} on {disk.name}
               </p>
@@ -79,14 +76,6 @@ export const ResizeMoveModal: React.FC<ResizeMoveModalProps> = ({
               <span className="font-mono text-blue-700 font-bold">{sizeGB} GB</span>
             </div>
             <div className="h-10 w-full rounded-md bg-slate-100 border border-slate-300 p-0.5 flex gap-1 items-center">
-              {spaceBeforeGB > 0 && (
-                <div
-                  style={{ width: `${(spaceBeforeGB / maxSize) * 100}%` }}
-                  className="h-full bg-unallocated-pattern border border-dashed border-slate-300 rounded-xs flex items-center justify-center text-[10px] text-slate-500 font-mono"
-                >
-                  {spaceBeforeGB} GB
-                </div>
-              )}
               <div
                 style={{ width: `${(sizeGB / maxSize) * 100}%` }}
                 className="h-full bg-blue-600 rounded-xs flex items-center justify-between px-3 text-white text-xs font-semibold shadow-xs transition-all"
@@ -123,22 +112,7 @@ export const ResizeMoveModal: React.FC<ResizeMoveModalProps> = ({
           </div>
 
           {/* Numeric Precision Inputs */}
-          <div className="grid grid-cols-3 gap-3">
-            <div className="p-2.5 rounded-lg border border-slate-200 bg-slate-50">
-              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
-                Space Before
-              </label>
-              <div className="flex items-center gap-1">
-                <input
-                  type="number"
-                  value={spaceBeforeGB}
-                  onChange={(e) => setSpaceBeforeGB(parseFloat(e.target.value) || 0)}
-                  className="w-full bg-transparent font-mono font-bold text-sm outline-none"
-                />
-                <span className="text-xs text-slate-500 font-mono">GB</span>
-              </div>
-            </div>
-
+          <div className="grid grid-cols-2 gap-3">
             <div className="p-2.5 rounded-lg border border-blue-300 bg-blue-50/50">
               <label className="text-[10px] font-bold text-blue-700 uppercase tracking-wider block mb-1">
                 Partition Size
@@ -158,15 +132,12 @@ export const ResizeMoveModal: React.FC<ResizeMoveModalProps> = ({
 
             <div className="p-2.5 rounded-lg border border-slate-200 bg-slate-50">
               <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
-                Space After
+                Unallocated After
               </label>
               <div className="flex items-center gap-1">
-                <input
-                  type="number"
-                  value={spaceAfterGB}
-                  onChange={(e) => setSpaceAfterGB(parseFloat(e.target.value) || 0)}
-                  className="w-full bg-transparent font-mono font-bold text-sm outline-none"
-                />
+                <span className="w-full font-mono font-bold text-sm text-slate-700">
+                  {spaceAfterGB.toFixed(1)}
+                </span>
                 <span className="text-xs text-slate-500 font-mono">GB</span>
               </div>
             </div>

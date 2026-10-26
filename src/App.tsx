@@ -30,16 +30,11 @@ import { CreatePartitionModal } from './components/modals/CreatePartitionModal'
 import { FormatModal } from './components/modals/FormatModal'
 import { DeleteWipeModal } from './components/modals/DeleteWipeModal'
 import { ChangeLetterModal } from './components/modals/ChangeLetterModal'
-import { MergeSplitModal } from './components/modals/MergeSplitModal'
-import { CloneWizardModal } from './components/modals/CloneWizardModal'
 import { ApplyOperationsModal } from './components/modals/ApplyOperationsModal'
 import { ConfirmActionModal } from './components/modals/ConfirmActionModal'
 
 // Views
-import { SurfaceTestView } from './components/views/SurfaceTestView'
 import { DiskHealthSmartView } from './components/views/DiskHealthSmartView'
-import { DiskBenchmarkView } from './components/views/DiskBenchmarkView'
-import { AlignmentToolView } from './components/views/AlignmentToolView'
 
 export default function App() {
   const [disks, setDisks] = useState<Disk[]>([])
@@ -242,12 +237,7 @@ export default function App() {
     setContextMenu(null)
     const part = target && !('partitions' in target) ? target : selectedPartition || undefined
     const disk = target && 'partitions' in target ? target : activeDisk
-    if (!disk && type !== 'clone') return
-
-    if (type === 'clone') {
-      setActiveTab('clone')
-      return
-    }
+    if (!disk) return
 
     if (type === 'set_active' && part) {
       setPendingConfirm({
@@ -269,17 +259,6 @@ export default function App() {
         title: `Convert Disk to ${toStyle}`,
         description: `${disk.name} uses ${disk.partitionStyle} today.`,
         detail: `This stages a partition-table conversion (${disk.partitionStyle} to ${toStyle}) for ${disk.name}. Applied on Apply.`,
-      })
-      return
-    }
-
-    if (type === 'rebuild_mbr' && disk) {
-      setPendingConfirm({
-        type: 'rebuild_mbr',
-        diskId: disk.id,
-        title: 'Rebuild MBR',
-        description: `Rewrite boot code on ${disk.name}.`,
-        detail: `This stages an MBR rebuild for ${disk.name} without touching partition data. Applied on Apply.`,
       })
       return
     }
@@ -333,7 +312,7 @@ export default function App() {
     } else {
       pushOperation({
         id: `op-${c.type}-${Date.now()}`,
-        type: c.type === 'chkdsk' ? 'chkdsk' : 'rebuild_mbr',
+        type: 'chkdsk',
         title: c.title,
         description: c.description,
         diskId: c.diskId,
@@ -488,65 +467,6 @@ export default function App() {
           return { ...disk, partitions: updatedParts }
         }
 
-        // 9. Merge two partitions into one
-        if (op.type === 'merge' && op.partitionId) {
-          const source = disk.partitions.find(p => p.id === op.partitionId)
-          const targetId: string | undefined =
-            op.targetPartitionId || op.params?.targetPartition?.id || op.params?.targetPartitionId
-          const target = disk.partitions.find(p => p.id === targetId)
-          if (!source || !target) return disk
-          const mergedSize = source.sizeGB + target.sizeGB
-          const mergedUsed = Math.min(mergedSize, source.usedGB + target.usedGB)
-          const updatedParts = disk.partitions
-            .filter(p => p.id !== source.id && p.id !== target.id)
-            .concat([
-              {
-                ...target,
-                sizeGB: mergedSize,
-                usedGB: mergedUsed,
-                name: target.name,
-              },
-            ])
-          return { ...disk, partitions: updatedParts }
-        }
-
-        // 10. Split one partition into two
-        if (op.type === 'split' && op.partitionId) {
-          const source = disk.partitions.find(p => p.id === op.partitionId)
-          if (!source) return disk
-          const newVolumeSize = op.params?.newVolumeSizeGB || Math.floor(source.sizeGB / 2)
-          const remainingSize = Math.max(0, source.sizeGB - newVolumeSize)
-          const splitUsed = Math.min(source.usedGB, remainingSize)
-          const updatedParts: Partition[] = []
-          disk.partitions.forEach(p => {
-            if (p.id === source.id) {
-              updatedParts.push({ ...source, sizeGB: remainingSize, usedGB: splitUsed })
-              updatedParts.push({
-                id: `p-split-${Date.now()}`,
-                name: op.params?.newLabel || 'New Volume',
-                letter: '',
-                type: 'primary',
-                sizeGB: newVolumeSize,
-                usedGB: Math.max(0, source.usedGB - splitUsed),
-                filesystem: source.filesystem === '-' ? 'NTFS' : source.filesystem,
-                status: 'healthy',
-                clusterSizeKB: source.clusterSizeKB || 4,
-                is4kAligned: source.is4kAligned !== false,
-                isActive: false,
-                volumeLabel: op.params?.newLabel || 'New Volume',
-              })
-            } else {
-              updatedParts.push(p)
-            }
-          })
-          return { ...disk, partitions: updatedParts }
-        }
-
-        // 11. Clone marker: recorded in queue only, disk layout unchanged
-        if (op.type === 'clone_disk' || op.type === 'clone') {
-          return disk
-        }
-
         return disk
       })
     })
@@ -612,20 +532,6 @@ export default function App() {
       logs.push(`[ERROR] ${message}`)
       return { logs, succeededIds: [] as string[], failed: true }
     }
-  }
-
-  const handleAlignSuccess = (diskId: string, partitionId: string) => {
-    setDisks(prev =>
-      prev.map(d => {
-        if (d.id !== diskId) return d
-        return {
-          ...d,
-          partitions: d.partitions.map(p =>
-            p.id === partitionId ? { ...p, is4kAligned: true } : p
-          ),
-        }
-      })
-    )
   }
 
   return (
@@ -800,40 +706,6 @@ export default function App() {
           </>
         )}
 
-        {/* TAB 2: Clone Wizard */}
-        {activeTab === 'clone' && activeDisk && (
-          <div className="flex-1 h-full overflow-y-auto bg-slate-100 flex flex-col">
-            <CloneWizardModal
-              disks={disks}
-              initialDisk={selectedDisk ?? undefined}
-              onClose={() => setActiveTab('manager')}
-              onConfirm={(params) => {
-                pushOperation({
-                  id: `op-clone-${Date.now()}`,
-                  type: 'clone_disk',
-                  title: `Clone ${params.sourceDiskId} to ${params.targetDiskId}`,
-                  description: `Disk migration. Sector-by-sector: ${params.sectorBySector}`,
-                  diskId: params.sourceDiskId,
-                  targetDiskId: params.targetDiskId,
-                  createdAt: Date.now(),
-                })
-                setActiveTab('manager')
-              }}
-            />
-          </div>
-        )}
-
-        {/* TAB 3: Surface Test */}
-        {activeTab === 'surface-test' && activeDisk && (
-          <div className="flex-1 h-full overflow-y-auto bg-slate-100 flex flex-col">
-            <SurfaceTestView
-              disks={disks}
-              selectedDisk={activeDisk!}
-              onSelectDisk={setSelectedDisk}
-            />
-          </div>
-        )}
-
         {/* TAB 4: Health & S.M.A.R.T. */}
         {activeTab === 'smart-health' && activeDisk && (
           <div className="flex-1 h-full overflow-y-auto bg-slate-100 flex flex-col">
@@ -845,26 +717,6 @@ export default function App() {
           </div>
         )}
 
-        {/* TAB 5: Benchmark Speed Test */}
-        {activeTab === 'benchmark' && activeDisk && (
-          <div className="flex-1 h-full overflow-y-auto bg-slate-100 flex flex-col">
-            <DiskBenchmarkView
-              disks={disks}
-              selectedDisk={activeDisk!}
-              onSelectDisk={setSelectedDisk}
-            />
-          </div>
-        )}
-
-        {/* TAB 6: 4K Alignment */}
-        {activeTab === 'alignment' && (
-          <div className="flex-1 h-full overflow-y-auto bg-slate-100 flex flex-col">
-            <AlignmentToolView
-              disks={disks}
-              onAlignSuccess={handleAlignSuccess}
-            />
-          </div>
-        )}
       </div>
 
       {/* ── Status Bar ────────────────────────────────────────────── */}
@@ -932,7 +784,7 @@ export default function App() {
               id: `op-resize-${Date.now()}`,
               type: 'resize_move',
               title: `Resize ${modalState.partition?.letter || modalState.partition?.name}`,
-              description: `Size: ${params.sizeGB} GB (Offset before: ${params.spaceBeforeGB} GB)`,
+              description: `New size: ${params.sizeGB} GB`,
               diskId: modalState.disk?.id || selectedDisk?.id || '',
               partitionId: modalState.partition?.id,
               params,
@@ -1027,30 +879,7 @@ export default function App() {
         />
       )}
 
-      {/* 6. Merge & Split Modal */}
-      {(modalState.type === 'merge' || modalState.type === 'split') && modalState.partition && (
-        <MergeSplitModal
-          mode={modalState.type}
-          disk={(modalState.disk || selectedDisk)!}
-          partition={modalState.partition}
-          onClose={() => setModalState({ type: 'none' })}
-          onConfirm={(params) => {
-            const opType = modalState.type as 'merge' | 'split'
-            pushOperation({
-              id: `op-${opType}-${Date.now()}`,
-              type: opType,
-              title: `${opType === 'merge' ? 'Merge' : 'Split'} Partition ${modalState.partition?.name}`,
-              description: opType === 'merge' ? `Combined to ${params.mergedSizeGB} GB` : `Split to ${params.newVolumeSizeGB} GB and ${params.remainingSizeGB} GB`,
-              diskId: modalState.disk?.id || selectedDisk?.id || '',
-              partitionId: modalState.partition?.id,
-              params,
-              createdAt: Date.now(),
-            })
-          }}
-        />
-      )}
-
-      {/* 7. Apply Operations Progress Modal */}
+      {/* 6. Apply Operations Progress Modal */}
       {modalState.type === 'apply_progress' && (
         <ApplyOperationsModal
           operations={pendingOperations}
