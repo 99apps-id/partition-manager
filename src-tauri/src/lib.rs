@@ -746,6 +746,20 @@ mod tests {
         })
     }
 
+    fn msr_partition() -> Value {
+        // The 16 MiB Microsoft Reserved partition that sits between the EFI
+        // partition and C: on a real Windows GPT layout.
+        json!({
+            "Number": 2, "Offset": 273_678_336, "Size": 16_777_216,
+            "DriveLetter": "", "Type": "Reserved",
+            "GptType": "{e3c9e316-0b5c-4db8-817d-f92df00215ae}", "MbrType": 0,
+            "IsActive": false, "IsBoot": false, "IsSystem": false, "IsHidden": true,
+            "FileSystem": "", "Label": "",
+            "VolumeSize": 0, "SizeRemaining": 0,
+            "AllocationUnitSize": 0, "HealthStatus": "Healthy"
+        })
+    }
+
     fn windows_partition() -> Value {
         json!({
             "Number": 3, "Offset": 290_455_552, "Size": 300 * GIB_I,
@@ -765,7 +779,7 @@ mod tests {
             "MediaType": "SSD", "Temperature": 41, "PowerOnHours": 1200,
             "Wear": 5, "StartStopCycleCount": 300,
             "ReadErrorsTotal": 0, "WriteErrorsTotal": 0,
-            "Partitions": [efi_partition(), windows_partition()]
+            "Partitions": [efi_partition(), msr_partition(), windows_partition()]
         })
     }
 
@@ -846,10 +860,11 @@ mod tests {
         assert_eq!(d["interface"], "SATA");
         let parts = d["partitions"].as_array().unwrap();
         let gaps: Vec<&Value> = parts.iter().filter(|p| p["type"] == "unallocated").collect();
-        // middle gap (~10 GiB) and trailing gap (rest of the 512 GiB disk)
+        // middle gap (21 GiB offset minus the first partition's ~10 GiB end,
+        // i.e. ~11 GiB) and trailing gap (rest of the 512 GiB disk)
         assert_eq!(gaps.len(), 2);
         let middle = gaps[0]["sizeGB"].as_f64().unwrap();
-        assert!(middle > 9.9 && middle < 10.1, "middle gap was {middle}");
+        assert!(middle > 10.9 && middle < 11.1, "middle gap was {middle}");
 
         // Empty disk: everything is one unallocated region
         let mut empty = sample_gpt_disk();
