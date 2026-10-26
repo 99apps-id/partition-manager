@@ -7,6 +7,7 @@ import {
   isDesktopApp,
   toBackendOp,
 } from './lib/backend'
+import { protectedOpBlockReason } from './lib/layout'
 import {
   ActiveTab,
   Disk,
@@ -46,6 +47,9 @@ export default function App() {
   const [isElevated, setIsElevated] = useState(false)
   const [isLoadingDisks, setIsLoadingDisks] = useState(true)
   const [diskLoadError, setDiskLoadError] = useState<string | null>(null)
+  // Feedback when a staged operation is refused (e.g. it targets the
+  // Windows boot/system partition); shown as a dismissible banner.
+  const [actionNotice, setActionNotice] = useState<string | null>(null)
 
   const activeDisk: Disk | null = selectedDisk ?? disks[0] ?? null
   const [selectedPartition, setSelectedPartition] = useState<Partition | null>(null)
@@ -155,6 +159,22 @@ export default function App() {
 
   // Add Operation to Queue with Undo/Redo tracking
   const pushOperation = (op: PendingOperation) => {
+    // Final guard, whatever path staged the operation: destructive ops on
+    // the Windows boot/system partition are refused here with an
+    // explanation instead of being queued to fail at Apply time.
+    if (op.partitionId) {
+      const targetPart = disks
+        .find(d => d.id === op.diskId)
+        ?.partitions.find(p => p.id === op.partitionId)
+      const reason = protectedOpBlockReason(op.type, targetPart)
+      if (reason) {
+        setActionNotice(reason)
+        setModalState({ type: 'none' })
+        setPendingConfirm(null)
+        return
+      }
+    }
+    setActionNotice(null)
     setUndoStack(prev => [...prev, pendingOperations])
     setRedoStack([])
     setPendingOperations(prev => [...prev, op])
@@ -573,6 +593,17 @@ export default function App() {
             Running without administrator rights. You can inspect disks, but applying partition changes
             requires restarting Partition Manager as administrator.
           </span>
+        </div>
+      )}
+      {actionNotice && (
+        <div className="px-3.5 py-2 bg-amber-50 border-b border-amber-200 text-amber-800 text-xs flex items-center justify-between shrink-0">
+          <span>{actionNotice}</span>
+          <button
+            onClick={() => setActionNotice(null)}
+            className="ml-3 px-2 py-0.5 rounded border border-amber-300 text-amber-700 font-semibold hover:bg-amber-100 shrink-0"
+          >
+            Dismiss
+          </button>
         </div>
       )}
       {diskLoadError && !isDemoMode && disks.length === 0 && (

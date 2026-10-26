@@ -120,6 +120,21 @@ export const PartitionTable: React.FC<PartitionTableProps> = ({
                         style={{ backgroundColor: partColor }}
                       />
                       <span className="font-semibold text-slate-900">{part.name}</span>
+                      {(part.flags || [])
+                        .filter(f => f === 'Boot' || f === 'System')
+                        .map(f => (
+                          <span
+                            key={f}
+                            className="px-1.5 py-0.5 rounded text-[10px] bg-indigo-100 text-indigo-700 border border-indigo-200 font-semibold"
+                            title={
+                              f === 'Boot'
+                                ? 'Windows boot volume -- protected from format, delete, wipe and letter change'
+                                : 'Windows system partition -- protected from format, delete, wipe and letter change'
+                            }
+                          >
+                            {f}
+                          </span>
+                        ))}
                     </div>
                   </td>
 

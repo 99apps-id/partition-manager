@@ -492,6 +492,24 @@ fn param_str(params: &Value, key: &str) -> String {
         .to_string()
 }
 
+/// PowerShell preamble that aborts the operation when the target is the
+/// Windows boot or system partition. The UI already refuses to stage such
+/// operations; this is the backend's own line of defense so no caller can
+/// format, delete, wipe, or re-letter the partition Windows runs from.
+fn boot_system_guard_by_number(d: u32, p: u32) -> String {
+    format!(
+        "$__bp = Get-Partition -DiskNumber {d} -PartitionNumber {p} -ErrorAction Stop; \
+         if ($__bp.IsBoot -or $__bp.IsSystem) {{ throw 'Refusing: this is the Windows boot/system partition, which Windows protects.' }}; "
+    )
+}
+
+fn boot_system_guard_by_letter(letter: char) -> String {
+    format!(
+        "$__bp = Get-Partition -DriveLetter {letter} -ErrorAction Stop; \
+         if ($__bp.IsBoot -or $__bp.IsSystem) {{ throw 'Refusing: this is the Windows boot/system partition, which Windows protects.' }}; "
+    )
+}
+
 fn build_op_script(op: &BackendOp) -> Result<String, String> {
     let d = op.disk_number;
     let p = op
@@ -558,7 +576,8 @@ fn build_op_script(op: &BackendOp) -> Result<String, String> {
                 String::new()
             };
             Ok(format!(
-                "Format-Volume -DriveLetter {letter} -FileSystem {fs} -NewFileSystemLabel {} -Confirm:$false{} -ErrorAction Stop; 'OK'",
+                "{}Format-Volume -DriveLetter {letter} -FileSystem {fs} -NewFileSystemLabel {} -Confirm:$false{} -ErrorAction Stop; 'OK'",
+                boot_system_guard_by_letter(letter),
                 ps_quote(&label),
                 cluster_arg
             ))
@@ -566,18 +585,20 @@ fn build_op_script(op: &BackendOp) -> Result<String, String> {
         "delete" => {
             let p = p?;
             Ok(format!(
-                "Remove-Partition -DiskNumber {d} -PartitionNumber {p} -Confirm:$false -ErrorAction Stop; 'OK'"
+                "{}Remove-Partition -DiskNumber {d} -PartitionNumber {p} -Confirm:$false -ErrorAction Stop; 'OK'",
+                boot_system_guard_by_number(d, p)
             ))
         }
         "change_letter" => {
             let p = p?;
             let new_letter = param_str(&op.params, "newLetter");
+            let guard = boot_system_guard_by_number(d, p);
             match valid_letter(&new_letter) {
                 Some(l) => Ok(format!(
-                    "Set-Partition -DiskNumber {d} -PartitionNumber {p} -NewDriveLetter {l} -ErrorAction Stop; 'OK'"
+                    "{guard}Set-Partition -DiskNumber {d} -PartitionNumber {p} -NewDriveLetter {l} -ErrorAction Stop; 'OK'"
                 )),
                 None => Ok(format!(
-                    "$paths = (Get-Partition -DiskNumber {d} -PartitionNumber {p}).AccessPaths | Where-Object {{ $_ -match '^[A-Za-z]:\\\\$' }}; foreach ($ap in $paths) {{ Remove-PartitionAccessPath -DiskNumber {d} -PartitionNumber {p} -AccessPath $ap -ErrorAction Stop }}; 'OK'"
+                    "{guard}$paths = (Get-Partition -DiskNumber {d} -PartitionNumber {p}).AccessPaths | Where-Object {{ $_ -match '^[A-Za-z]:\\\\$' }}; foreach ($ap in $paths) {{ Remove-PartitionAccessPath -DiskNumber {d} -PartitionNumber {p} -AccessPath $ap -ErrorAction Stop }}; 'OK'"
                 )),
             }
         }
@@ -611,7 +632,8 @@ fn build_op_script(op: &BackendOp) -> Result<String, String> {
             let letter = valid_letter(&op.drive_letter)
                 .ok_or_else(|| "The partition has no drive letter. Assign one before wiping.".to_string())?;
             Ok(format!(
-                "Format-Volume -DriveLetter {letter} -Confirm:$false -Full -ErrorAction Stop; 'OK'"
+                "{}Format-Volume -DriveLetter {letter} -Confirm:$false -Full -ErrorAction Stop; 'OK'",
+                boot_system_guard_by_letter(letter)
             ))
         }
         // The frontend only offers operations this backend can really
@@ -974,6 +996,32 @@ mod tests {
                 "{kind} should be rejected"
             );
         }
+    }
+
+    #[test]
+    fn destructive_scripts_carry_boot_system_guard() {
+        // Format, delete, wipe and change-letter must refuse the Windows
+        // boot/system partition inside the script itself, so no caller can
+        // bypass the UI's refusal.
+        let fmt = build_op_script(&op("format", json!({"filesystem": "NTFS", "volumeLabel": "X"}))).unwrap();
+        assert!(fmt.contains("Get-Partition -DriveLetter D"), "{fmt}");
+        assert!(fmt.contains("IsBoot") && fmt.contains("Windows boot/system partition"), "{fmt}");
+
+        let del = build_op_script(&op("delete", json!({}))).unwrap();
+        assert!(del.contains("Get-Partition -DiskNumber 1 -PartitionNumber 2"), "{del}");
+        assert!(del.contains("IsSystem"), "{del}");
+
+        let set = build_op_script(&op("change_letter", json!({"newLetter": "F"}))).unwrap();
+        assert!(set.contains("Windows boot/system partition"), "{set}");
+        let remove = build_op_script(&op("change_letter", json!({"newLetter": ""}))).unwrap();
+        assert!(remove.contains("Windows boot/system partition"), "{remove}");
+
+        let wipe = build_op_script(&op("wipe", json!({}))).unwrap();
+        assert!(wipe.contains("Windows boot/system partition"), "{wipe}");
+
+        // Resize of the boot volume is legitimate and must NOT be guarded.
+        let resize = build_op_script(&op("resize_move", json!({"sizeGB": 10.0}))).unwrap();
+        assert!(!resize.contains("Windows boot/system partition"), "{resize}");
     }
 
     #[test]

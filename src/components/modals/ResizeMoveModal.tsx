@@ -1,7 +1,10 @@
 import React, { useState } from 'react'
-import { Sliders, X, Check } from 'lucide-react'
+import { Sliders, X, Check, AlertTriangle } from 'lucide-react'
 import { Disk, Partition } from '../../types/partition'
+import { adjacentFreeAfterGB } from '../../lib/layout'
 import { useDismissModal } from './useDismissModal'
+
+const round2 = (n: number) => Math.round(n * 100) / 100
 
 interface ResizeMoveModalProps {
   disk: Disk
@@ -16,17 +19,18 @@ export const ResizeMoveModal: React.FC<ResizeMoveModalProps> = ({
   onClose,
   onConfirm,
 }) => {
-  const unallocatedPool = disk.partitions
-    .filter(p => p.type === 'unallocated')
-    .reduce((sum, p) => sum + p.sizeGB, 0)
+  // Windows can only extend a partition into unallocated space that
+  // immediately follows it; free space elsewhere on the disk is NOT
+  // growable room, so the maximum is based on the adjacent gap alone.
+  const growableGB = adjacentFreeAfterGB(disk, partition.id)
 
   const minSize = Math.max(partition.usedGB + 5, 10)
-  const maxSize = partition.sizeGB + unallocatedPool
+  const maxSize = round2(partition.sizeGB + growableGB)
 
   const [sizeGB, setSizeGB] = useState(partition.sizeGB)
-  // Free space after the partition once resized: the existing unallocated
-  // pool plus whatever shrinking releases (negative when growing into it).
-  const spaceAfterGB = Math.max(0, unallocatedPool - (sizeGB - partition.sizeGB))
+  // Free space directly after the partition once resized: the adjacent gap
+  // plus whatever shrinking releases (shrinking when sizeGB < current size).
+  const spaceAfterGB = round2(Math.max(0, growableGB - (sizeGB - partition.sizeGB)))
   useDismissModal(onClose)
 
   const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -143,12 +147,24 @@ export const ResizeMoveModal: React.FC<ResizeMoveModalProps> = ({
             </div>
           </div>
 
-          <div className="p-3 rounded-lg bg-blue-50 border border-blue-200 text-xs text-blue-800 flex items-start gap-2">
-            <Check className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
-            <p>
-              Non-destructive resize: Files on this volume will be preserved. Changes will be added to the pending queue.
-            </p>
-          </div>
+          {growableGB === 0 ? (
+            <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800 flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <p>
+                This partition can only shrink right now. Windows can extend a partition only into
+                unallocated space that immediately follows it, and there is none after this one --
+                free space elsewhere on the disk cannot be used for growing it.
+              </p>
+            </div>
+          ) : (
+            <div className="p-3 rounded-lg bg-blue-50 border border-blue-200 text-xs text-blue-800 flex items-start gap-2">
+              <Check className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+              <p>
+                Non-destructive resize: Files on this volume will be preserved. It can grow into the{' '}
+                {growableGB} GB of unallocated space directly after it. Changes will be added to the pending queue.
+              </p>
+            </div>
+          )}
 
           {/* Footer Actions */}
           <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-100">

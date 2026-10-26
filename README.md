@@ -48,6 +48,17 @@ The app now ships as a **Tauri 2 desktop application** with a Rust backend
   4K realignment, MBR boot-code rebuild, whole-disk wipe, surface test, and
   benchmark were removed; resizing cannot move a partition's start offset.
 - Moving a partition's start offset is not supported; resizing its end is.
+- A partition can only **grow into unallocated space that immediately
+  follows it** (a Windows `Resize-Partition` limit). The resize dialog caps
+  the maximum at the adjacent gap, not at all free space on the disk, and
+  says so when a partition can only shrink.
+- The **Windows boot/system partitions are protected**: the disk and the
+  partitions carry visible "System" / "Boot" markers, format / delete /
+  wipe / drive-letter change are disabled for them in the UI with the
+  reason shown, the operation queue refuses them as a final check, and
+  the generated PowerShell itself re-checks `IsBoot`/`IsSystem` and aborts
+  before touching them. Resizing the boot volume and read-only checks stay
+  available, as Windows supports both.
 
 ## Running
 
