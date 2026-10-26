@@ -7,6 +7,8 @@ export type DiskType = 'Basic' | 'Dynamic'
 
 export interface Partition {
   id: string
+  /** Windows partition number (MSFT_Partition.PartitionNumber). 0 for unallocated regions. */
+  number?: number
   name: string
   letter?: string
   type: PartitionType
@@ -45,6 +47,8 @@ export interface BenchmarkResult {
 
 export interface Disk {
   id: string
+  /** Windows disk number (MSFT_Disk.Number). */
+  number?: number
   name: string
   model: string
   serialNumber: string

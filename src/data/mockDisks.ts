@@ -3,6 +3,7 @@ import { Disk } from '../types/partition'
 export const initialDisks: Disk[] = [
   {
     id: 'disk-0',
+    number: 0,
     name: 'Disk 0',
     model: 'Samsung SSD 980 PRO with Heatsink 1TB',
     serialNumber: 'S5GXNF0R819244K',
@@ -133,6 +134,7 @@ export const initialDisks: Disk[] = [
   },
   {
     id: 'disk-1',
+    number: 1,
     name: 'Disk 1',
     model: 'Western Digital Blue WD20EZAZ 2TB',
     serialNumber: 'WD-WCC4N7TY8210',
@@ -225,6 +227,7 @@ export const initialDisks: Disk[] = [
   },
   {
     id: 'disk-2',
+    number: 2,
     name: 'Disk 2',
     model: 'Kingston DataTraveler Max 128GB USB 3.2',
     serialNumber: 'KNG-DTM-991204',

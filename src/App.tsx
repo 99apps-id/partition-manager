@@ -1,6 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { initialDisks } from './data/mockDisks'
 import {
+  executeOperations,
+  fetchDisks,
+  fetchEnvironment,
+  isDesktopApp,
+  toBackendOp,
+} from './lib/backend'
+import {
   ActiveTab,
   Disk,
   ModalState,
@@ -9,7 +16,6 @@ import {
   PendingOperation,
 } from './types/partition'
 import { Toolbar } from './components/Toolbar'
-import TitleBar from './components/TitleBar'
 import { DiskListTree } from './components/DiskListTree'
 import { DiskVisualMap } from './components/DiskVisualMap'
 import { PartitionTable } from './components/PartitionTable'
@@ -36,8 +42,17 @@ import { DiskBenchmarkView } from './components/views/DiskBenchmarkView'
 import { AlignmentToolView } from './components/views/AlignmentToolView'
 
 export default function App() {
-  const [disks, setDisks] = useState<Disk[]>(initialDisks)
-  const [selectedDisk, setSelectedDisk] = useState<Disk>(initialDisks[0])
+  const [disks, setDisks] = useState<Disk[]>([])
+  const [selectedDisk, setSelectedDisk] = useState<Disk | null>(null)
+  // Real data state: in the desktop app disks come from the Windows Storage
+  // APIs via the Rust backend. In a browser we can only show sample data,
+  // which is labeled demo mode everywhere it matters.
+  const [isDemoMode, setIsDemoMode] = useState(false)
+  const [isElevated, setIsElevated] = useState(false)
+  const [isLoadingDisks, setIsLoadingDisks] = useState(true)
+  const [diskLoadError, setDiskLoadError] = useState<string | null>(null)
+
+  const activeDisk: Disk | null = selectedDisk ?? disks[0] ?? null
   const [selectedPartition, setSelectedPartition] = useState<Partition | null>(null)
   const [activeTab, setActiveTab] = useState<ActiveTab>('manager')
 
@@ -177,16 +192,57 @@ export default function App() {
     }
   }
 
-  // Rescan / Refresh
+  // Load disks from the backend (real) or sample data (browser demo)
+  const loadDisks = useCallback(async () => {
+    setIsLoadingDisks(true)
+    setDiskLoadError(null)
+    if (!isDesktopApp()) {
+      setIsDemoMode(true)
+      setDisks(initialDisks)
+      setSelectedDisk(prev => prev ?? initialDisks[0])
+      setIsLoadingDisks(false)
+      return
+    }
+    try {
+      const [realDisks, env] = await Promise.all([
+        fetchDisks(),
+        fetchEnvironment().catch(() => null),
+      ])
+      if (env) setIsElevated(env.isElevated)
+      setIsDemoMode(false)
+      setDisks(realDisks)
+      setSelectedDisk(prev => {
+        const kept = prev ? realDisks.find(d => d.id === prev.id) : undefined
+        return kept ?? realDisks[0] ?? null
+      })
+      if (realDisks.length === 0) {
+        setDiskLoadError(
+          'Windows reported no physical disks. Check that drives are connected and visible in Windows Disk Management, then rescan.'
+        )
+      }
+    } catch (err) {
+      setDisks([])
+      setSelectedDisk(null)
+      setDiskLoadError(err instanceof Error ? err.message : String(err))
+    }
+    setIsLoadingDisks(false)
+  }, [])
+
+  useEffect(() => {
+    void loadDisks()
+  }, [loadDisks])
+
+  // Rescan / Refresh: asks Windows for the current disk layout again
   const handleRefresh = () => {
-    alert('Hardware rescan complete: All drives up to date.')
+    void loadDisks()
   }
 
   // Open appropriate modal
   const handleOpenModal = (type: ModalState['type'], target?: any) => {
     setContextMenu(null)
     const part = target && !('partitions' in target) ? target : selectedPartition || undefined
-    const disk = target && 'partitions' in target ? target : selectedDisk
+    const disk = target && 'partitions' in target ? target : activeDisk
+    if (!disk && type !== 'clone') return
 
     if (type === 'clone') {
       setActiveTab('clone')
@@ -288,8 +344,11 @@ export default function App() {
     setPendingConfirm(null)
   }
 
-  // Concrete apply execution: mutates the state
-  const commitAllOperations = () => {
+  // DEMO MODE ONLY: simulates applying operations by mutating local state.
+  // In the desktop app, staged operations are executed for real by the
+  // Windows backend (see executeStagedOperations below); sample data must
+  // never be presented as a real disk.
+  const commitAllOperationsDemo = () => {
     let updatedDisks = [...disks]
 
     pendingOperations.forEach(op => {
@@ -498,6 +557,63 @@ export default function App() {
     setRedoStack([])
   }
 
+  // Execute staged operations. Desktop: calls the Rust backend, which runs
+  // the Windows Storage cmdlets, then rescans so the UI shows the true
+  // post-operation layout. Demo: local simulation, labeled as such in the log.
+  const executeStagedOperations = async (ops: PendingOperation[]) => {
+    if (isDemoMode) {
+      commitAllOperationsDemo()
+      return {
+        logs: [
+          '[WARN] DEMO MODE: operations were simulated against sample data only. No real disk was touched.',
+          ...ops.map(op => `[OK] ${op.title} (simulated)`),
+        ],
+        succeededIds: ops.map(op => op.id),
+        failed: false,
+      }
+    }
+    const logs: string[] = []
+    const backendOps = []
+    for (const op of ops) {
+      const mapped = toBackendOp(op, disks)
+      if (mapped) backendOps.push(mapped)
+      else logs.push(`[FAIL] ${op.title}: target disk or partition no longer exists. Rescan and stage the operation again.`)
+    }
+    if (backendOps.length === 0) {
+      return { logs, succeededIds: [] as string[], failed: true }
+    }
+    try {
+      const outcomes = await executeOperations(backendOps)
+      const succeededIds: string[] = []
+      let failed = logs.length > 0
+      for (const outcome of outcomes) {
+        const op = ops.find(o => o.id === outcome.id)
+        const title = op?.title || outcome.id
+        if (outcome.ok) {
+          succeededIds.push(outcome.id)
+          logs.push(`[OK] ${title}: ${outcome.message}`)
+        } else {
+          failed = true
+          logs.push(`[FAIL] ${title}: ${outcome.message}`)
+        }
+      }
+      // Remove only the operations that really succeeded; failed and skipped
+      // ones stay in the queue so the user can retry or discard them.
+      const done = new Set(succeededIds)
+      setPendingOperations(prev => prev.filter(op => !done.has(op.id)))
+      if (done.size > 0) {
+        setUndoStack([])
+        setRedoStack([])
+      }
+      await loadDisks()
+      return { logs, succeededIds, failed }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      logs.push(`[ERROR] ${message}`)
+      return { logs, succeededIds: [] as string[], failed: true }
+    }
+  }
+
   const handleAlignSuccess = (diskId: string, partitionId: string) => {
     setDisks(prev =>
       prev.map(d => {
@@ -514,8 +630,10 @@ export default function App() {
 
   return (
     <div className="h-screen w-screen flex flex-col overflow-hidden select-none bg-slate-100 text-slate-800">
-      {/* ── TitleBar (Tauri only) ──────────────────────────────────── */}
-      <TitleBar />
+      {/* Window controls (minimize / maximize / close) are the native OS
+          buttons provided by the window decorations. There is deliberately
+          no custom title bar: on Windows the buttons must behave like every
+          other Windows application. */}
 
       {/* ── Toolbar Header ────────────────────────────────────────── */}
       <Toolbar
@@ -529,15 +647,66 @@ export default function App() {
         onDiscard={handleDiscard}
         onApply={() => setModalState({ type: 'apply_progress' })}
         onRefresh={handleRefresh}
-        selectedDisk={selectedDisk}
+        selectedDisk={selectedDisk ?? undefined}
         selectedPartition={selectedPartition}
         onOpenModal={(type) => handleOpenModal(type)}
       />
 
+      {/* ── Environment banners ─────────────────────────────────────── */}
+      {isDemoMode && (
+        <div className="px-3.5 py-2 bg-amber-50 border-b border-amber-200 text-amber-800 text-xs flex items-center justify-between shrink-0">
+          <span>
+            <strong>Demo mode.</strong> You are viewing sample data in a browser. Disk detection and
+            partition changes only work in the Windows desktop app, and operations here are simulated.
+          </span>
+        </div>
+      )}
+      {!isDemoMode && !isElevated && !isLoadingDisks && (
+        <div className="px-3.5 py-2 bg-slate-800 text-slate-100 text-xs flex items-center justify-between shrink-0">
+          <span>
+            Running without administrator rights. You can inspect disks, but applying partition changes
+            requires restarting Partition Manager as administrator.
+          </span>
+        </div>
+      )}
+      {diskLoadError && !isDemoMode && disks.length === 0 && (
+        <div className="px-3.5 py-2 bg-red-50 border-b border-red-200 text-red-800 text-xs flex items-center justify-between shrink-0">
+          <span>
+            <strong>No disks detected.</strong> {diskLoadError}
+          </span>
+          <button
+            onClick={() => void loadDisks()}
+            className="ml-3 px-2.5 py-1 rounded bg-red-600 text-white font-semibold hover:bg-red-700 shrink-0"
+          >
+            Rescan
+          </button>
+        </div>
+      )}
+
       {/* ── Main Workspace Content Area ────────────────────────────── */}
       <div className="flex-1 flex overflow-hidden p-3.5 gap-3.5 bg-slate-100">
         {/* TAB 1: Partition Manager */}
-        {activeTab === 'manager' && (
+        {activeTab === 'manager' && isLoadingDisks ? (
+          <div className="flex-1 h-full bg-white rounded-xl border border-slate-200/90 shadow-xs flex flex-col items-center justify-center gap-3 text-slate-500">
+            <span className="w-8 h-8 rounded-full border-[3px] border-slate-200 border-t-blue-600 animate-spin" />
+            <p className="text-sm font-medium">Scanning disks...</p>
+            <p className="text-xs text-slate-400">Reading the disk layout from Windows Storage.</p>
+          </div>
+        ) : activeTab === 'manager' && !activeDisk ? (
+          <div className="flex-1 h-full bg-white rounded-xl border border-slate-200/90 shadow-xs flex flex-col items-center justify-center gap-3 text-slate-500 px-8 text-center">
+            <p className="text-base font-semibold text-slate-700">No disks detected</p>
+            <p className="text-sm text-slate-500 max-w-md">
+              {diskLoadError ||
+                'No physical disks were found. Connect a drive and rescan. On Windows, disks must also be visible in Disk Management.'}
+            </p>
+            <button
+              onClick={() => void loadDisks()}
+              className="mt-1 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700"
+            >
+              Rescan disks
+            </button>
+          </div>
+        ) : activeTab === 'manager' && (
           <>
             {/* Left Sidebar: Disks Tree (Card Container) */}
             <aside
@@ -546,7 +715,7 @@ export default function App() {
             >
               <DiskListTree
                 disks={disks}
-                selectedDisk={selectedDisk}
+                selectedDisk={selectedDisk ?? undefined}
                 selectedPartition={selectedPartition}
                 onSelectDisk={(disk) => {
                   setSelectedDisk(disk)
@@ -574,7 +743,7 @@ export default function App() {
               {/* 1. Proportional Graphical Disk Map */}
               <DiskVisualMap
                 disks={disks}
-                selectedDisk={selectedDisk}
+                selectedDisk={activeDisk!}
                 selectedPartition={selectedPartition}
                 onSelectDisk={setSelectedDisk}
                 onSelectPartition={(disk, part) => {
@@ -600,7 +769,7 @@ export default function App() {
 
               {/* 3. Partition Table */}
               <PartitionTable
-                selectedDisk={selectedDisk}
+                selectedDisk={activeDisk!}
                 selectedPartition={selectedPartition}
                 onSelectPartition={setSelectedPartition}
                 onContextMenu={handleContextMenu}
@@ -614,7 +783,7 @@ export default function App() {
               className="shrink-0 h-full bg-white rounded-xl border border-slate-200/90 shadow-xs flex flex-col overflow-hidden relative"
             >
               <PropertiesPanel
-                selectedDisk={selectedDisk}
+                selectedDisk={selectedDisk ?? undefined}
                 selectedPartition={selectedPartition}
                 onOpenModal={(type, target) => handleOpenModal(type, target)}
                 onSelectPartition={setSelectedPartition}
@@ -632,11 +801,11 @@ export default function App() {
         )}
 
         {/* TAB 2: Clone Wizard */}
-        {activeTab === 'clone' && (
+        {activeTab === 'clone' && activeDisk && (
           <div className="flex-1 h-full overflow-y-auto bg-slate-100 flex flex-col">
             <CloneWizardModal
               disks={disks}
-              initialDisk={selectedDisk}
+              initialDisk={selectedDisk ?? undefined}
               onClose={() => setActiveTab('manager')}
               onConfirm={(params) => {
                 pushOperation({
@@ -655,33 +824,33 @@ export default function App() {
         )}
 
         {/* TAB 3: Surface Test */}
-        {activeTab === 'surface-test' && (
+        {activeTab === 'surface-test' && activeDisk && (
           <div className="flex-1 h-full overflow-y-auto bg-slate-100 flex flex-col">
             <SurfaceTestView
               disks={disks}
-              selectedDisk={selectedDisk}
+              selectedDisk={activeDisk!}
               onSelectDisk={setSelectedDisk}
             />
           </div>
         )}
 
         {/* TAB 4: Health & S.M.A.R.T. */}
-        {activeTab === 'smart-health' && (
+        {activeTab === 'smart-health' && activeDisk && (
           <div className="flex-1 h-full overflow-y-auto bg-slate-100 flex flex-col">
             <DiskHealthSmartView
               disks={disks}
-              selectedDisk={selectedDisk}
+              selectedDisk={activeDisk!}
               onSelectDisk={setSelectedDisk}
             />
           </div>
         )}
 
         {/* TAB 5: Benchmark Speed Test */}
-        {activeTab === 'benchmark' && (
+        {activeTab === 'benchmark' && activeDisk && (
           <div className="flex-1 h-full overflow-y-auto bg-slate-100 flex flex-col">
             <DiskBenchmarkView
               disks={disks}
-              selectedDisk={selectedDisk}
+              selectedDisk={activeDisk!}
               onSelectDisk={setSelectedDisk}
             />
           </div>
@@ -704,7 +873,13 @@ export default function App() {
         <div className="flex items-center gap-3">
           <span className="flex items-center gap-1.5 text-emerald-700 font-semibold">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
-            Ready
+            {isLoadingDisks
+              ? 'Scanning disks...'
+              : isDemoMode
+              ? 'Demo mode (sample data)'
+              : isElevated
+              ? 'Ready - Administrator'
+              : 'Ready - Standard user, applying changes needs administrator rights'}
           </span>
           {pendingOperations.length > 0 ? (
             <span className="text-amber-700 font-semibold">
@@ -749,7 +924,7 @@ export default function App() {
       {/* 1. Resize / Move Modal */}
       {modalState.type === 'resize_move' && modalState.partition && (
         <ResizeMoveModal
-          disk={modalState.disk || selectedDisk}
+          disk={(modalState.disk || selectedDisk)!}
           partition={modalState.partition}
           onClose={() => setModalState({ type: 'none' })}
           onConfirm={(params) => {
@@ -758,7 +933,7 @@ export default function App() {
               type: 'resize_move',
               title: `Resize ${modalState.partition?.letter || modalState.partition?.name}`,
               description: `Size: ${params.sizeGB} GB (Offset before: ${params.spaceBeforeGB} GB)`,
-              diskId: modalState.disk?.id || selectedDisk.id,
+              diskId: modalState.disk?.id || selectedDisk?.id || '',
               partitionId: modalState.partition?.id,
               params,
               createdAt: Date.now(),
@@ -770,7 +945,7 @@ export default function App() {
       {/* 2. Create Partition Modal */}
       {modalState.type === 'create' && (
         <CreatePartitionModal
-          disk={modalState.disk || selectedDisk}
+          disk={(modalState.disk || selectedDisk)!}
           unallocatedPart={modalState.partition?.type === 'unallocated' ? modalState.partition : undefined}
           existingDisks={disks}
           onClose={() => setModalState({ type: 'none' })}
@@ -780,7 +955,7 @@ export default function App() {
               type: 'create',
               title: `Create Partition ${params.letter} (${params.name})`,
               description: `${params.filesystem} • ${params.sizeGB} GB`,
-              diskId: modalState.disk?.id || selectedDisk.id,
+              diskId: modalState.disk?.id || selectedDisk?.id || '',
               params,
               createdAt: Date.now(),
             })
@@ -799,7 +974,7 @@ export default function App() {
               type: 'format',
               title: `Format ${modalState.partition?.letter || modalState.partition?.name}`,
               description: `${params.filesystem} (${params.volumeLabel})`,
-              diskId: modalState.disk?.id || selectedDisk.id,
+              diskId: modalState.disk?.id || selectedDisk?.id || '',
               partitionId: modalState.partition?.id,
               params,
               createdAt: Date.now(),
@@ -812,7 +987,7 @@ export default function App() {
       {(modalState.type === 'delete' || modalState.type === 'wipe') && (
         <DeleteWipeModal
           mode={modalState.type}
-          target={modalState.partition || modalState.disk || selectedDisk}
+          target={(modalState.partition || modalState.disk || selectedDisk)!}
           onClose={() => setModalState({ type: 'none' })}
           onConfirm={(params) => {
             const isTargetDisk = !modalState.partition
@@ -820,9 +995,9 @@ export default function App() {
             pushOperation({
               id: `op-${opType}-${Date.now()}`,
               type: opType,
-              title: `${opType === 'delete' ? 'Delete' : 'Wipe'} ${isTargetDisk ? 'Disk' : 'Partition'} ${modalState.partition?.letter || modalState.partition?.name || selectedDisk.name}`,
+              title: `${opType === 'delete' ? 'Delete' : 'Wipe'} ${isTargetDisk ? 'Disk' : 'Partition'} ${modalState.partition?.letter || modalState.partition?.name || selectedDisk?.name || 'Disk'}`,
               description: opType === 'wipe' ? `Algorithm: ${params.algorithm}` : 'Release to unallocated space',
-              diskId: modalState.disk?.id || selectedDisk.id,
+              diskId: modalState.disk?.id || selectedDisk?.id || '',
               partitionId: modalState.partition?.id,
               params,
               createdAt: Date.now(),
@@ -843,7 +1018,7 @@ export default function App() {
               type: 'change_letter',
               title: `Change Letter for ${modalState.partition?.name}`,
               description: `Assign letter: ${newLetter || 'None'}`,
-              diskId: modalState.disk?.id || selectedDisk.id,
+              diskId: modalState.disk?.id || selectedDisk?.id || '',
               partitionId: modalState.partition?.id,
               params: { newLetter },
               createdAt: Date.now(),
@@ -856,7 +1031,7 @@ export default function App() {
       {(modalState.type === 'merge' || modalState.type === 'split') && modalState.partition && (
         <MergeSplitModal
           mode={modalState.type}
-          disk={modalState.disk || selectedDisk}
+          disk={(modalState.disk || selectedDisk)!}
           partition={modalState.partition}
           onClose={() => setModalState({ type: 'none' })}
           onConfirm={(params) => {
@@ -866,7 +1041,7 @@ export default function App() {
               type: opType,
               title: `${opType === 'merge' ? 'Merge' : 'Split'} Partition ${modalState.partition?.name}`,
               description: opType === 'merge' ? `Combined to ${params.mergedSizeGB} GB` : `Split to ${params.newVolumeSizeGB} GB and ${params.remainingSizeGB} GB`,
-              diskId: modalState.disk?.id || selectedDisk.id,
+              diskId: modalState.disk?.id || selectedDisk?.id || '',
               partitionId: modalState.partition?.id,
               params,
               createdAt: Date.now(),
@@ -880,7 +1055,7 @@ export default function App() {
         <ApplyOperationsModal
           operations={pendingOperations}
           onClose={() => setModalState({ type: 'none' })}
-          onComplete={commitAllOperations}
+          onExecute={executeStagedOperations}
         />
       )}
     </div>
