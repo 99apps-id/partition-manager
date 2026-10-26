@@ -10,7 +10,8 @@
     "tauri": "tauri",
     "desktop:dev": "npm run gen:icons && tauri dev",
     "desktop:build": "npm run gen:icons && tauri build",
-    "gen:icons": "tauri icon public/partition-manager-icon.png"
+    "gen:icons": "tauri icon public/partition-manager-icon.png",
+    "test": "vitest run"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.4",
@@ -27,6 +28,7 @@
     "@vitejs/plugin-react": "^4.5.2",
     "tailwindcss": "^4.3.3",
     "typescript": "~5.8.3",
-    "vite": "^6.3.5"
+    "vite": "^6.3.5",
+    "vitest": "^3.2.7"
   }
 }

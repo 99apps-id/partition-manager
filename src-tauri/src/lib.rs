@@ -721,3 +721,254 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running Partition Manager");
 }
+
+// ---------------------------------------------------------------------------
+// Tests: the mapping from raw Windows Storage output and the operation
+// script generation are pure functions, so they are covered with fixtures
+// that mimic real PowerShell output. These tests run on any platform.
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const GIB_I: i64 = 1_073_741_824;
+
+    fn efi_partition() -> Value {
+        json!({
+            "Number": 1, "Offset": 1_048_576, "Size": 272_629_760,
+            "DriveLetter": "", "Type": "System",
+            "GptType": "{c12a7328-f81f-11d2-ba4b-00a0c93ec93b}", "MbrType": 0,
+            "IsActive": false, "IsBoot": false, "IsSystem": true, "IsHidden": true,
+            "FileSystem": "FAT32", "Label": "",
+            "VolumeSize": 272_629_760, "SizeRemaining": 209_715_200,
+            "AllocationUnitSize": 4096, "HealthStatus": "Healthy"
+        })
+    }
+
+    fn windows_partition() -> Value {
+        json!({
+            "Number": 3, "Offset": 290_455_552, "Size": 300 * GIB_I,
+            "DriveLetter": "C", "Type": "Basic",
+            "GptType": "{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}", "MbrType": 0,
+            "IsActive": false, "IsBoot": true, "IsSystem": false, "IsHidden": false,
+            "FileSystem": "NTFS", "Label": "Windows",
+            "VolumeSize": 300 * GIB_I, "SizeRemaining": 120 * GIB_I,
+            "AllocationUnitSize": 4096, "HealthStatus": "Healthy"
+        })
+    }
+
+    fn sample_gpt_disk() -> Value {
+        json!({
+            "Number": 0, "FriendlyName": "NVMe Samsung SSD 990", "SerialNumber": "S123",
+            "Size": 512 * GIB_I, "BusType": "NVMe", "PartitionStyle": "GPT",
+            "MediaType": "SSD", "Temperature": 41, "PowerOnHours": 1200,
+            "Wear": 5, "StartStopCycleCount": 300,
+            "ReadErrorsTotal": 0, "WriteErrorsTotal": 0,
+            "Partitions": [efi_partition(), windows_partition()]
+        })
+    }
+
+    #[test]
+    fn maps_gpt_nvme_disk_identity_and_health() {
+        let d = map_disk(&sample_gpt_disk());
+        assert_eq!(d["id"], "disk-0");
+        assert_eq!(d["number"], 0);
+        assert_eq!(d["model"], "NVMe Samsung SSD 990");
+        assert_eq!(d["interface"], "NVMe");
+        assert_eq!(d["partitionStyle"], "GPT");
+        assert_eq!(d["isSSD"], true);
+        assert_eq!(d["healthPercent"], 95); // 100 - wear 5
+        assert_eq!(d["temperatureC"], 41);
+        assert_eq!(d["powerOnHours"], 1200);
+        assert_eq!(d["sizeGB"], 512.0);
+        assert!(!d["smartAttributes"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn maps_partitions_types_letters_and_used_space() {
+        let d = map_disk(&sample_gpt_disk());
+        let parts = d["partitions"].as_array().unwrap();
+        let efi = &parts[0];
+        assert_eq!(efi["type"], "system");
+        assert_eq!(efi["name"], "EFI System Partition");
+        assert_eq!(efi["filesystem"], "FAT32");
+        assert_eq!(efi["isHidden"], true);
+
+        let c = parts.iter().find(|p| p["letter"] == "C:").unwrap();
+        assert_eq!(c["type"], "primary");
+        assert_eq!(c["number"], 3);
+        assert_eq!(c["usedGB"], 180.0); // 300 GiB volume, 120 GiB free
+        assert_eq!(c["filesystem"], "NTFS");
+        assert_eq!(c["volumeLabel"], "Windows");
+        assert_eq!(c["clusterSizeKB"], 4);
+        assert_eq!(c["is4kAligned"], true);
+        assert!(c["flags"].as_array().unwrap().iter().any(|f| f == "Boot"));
+    }
+
+    #[test]
+    fn materializes_trailing_unallocated_gap() {
+        let d = map_disk(&sample_gpt_disk());
+        let parts = d["partitions"].as_array().unwrap();
+        let gaps: Vec<&Value> = parts.iter().filter(|p| p["type"] == "unallocated").collect();
+        assert_eq!(gaps.len(), 1);
+        // 512 GiB disk, partitions end at 322413002752 bytes (~300.27 GiB)
+        assert!(gaps[0]["sizeGB"].as_f64().unwrap() > 200.0);
+        assert_eq!(gaps[0]["number"], 0);
+    }
+
+    #[test]
+    fn materializes_middle_gap_and_empty_disk() {
+        // MBR data disk with a hole between two partitions
+        let mut disk = sample_gpt_disk();
+        disk["PartitionStyle"] = json!("MBR");
+        disk["BusType"] = json!("SATA");
+        disk["Partitions"] = json!([
+            {
+                "Number": 1, "Offset": 1_048_576, "Size": 10 * GIB_I,
+                "DriveLetter": "D", "Type": "Basic", "GptType": "", "MbrType": 7,
+                "IsActive": true, "IsBoot": false, "IsSystem": false, "IsHidden": false,
+                "FileSystem": "NTFS", "Label": "Data",
+                "VolumeSize": 10 * GIB_I, "SizeRemaining": 5 * GIB_I,
+                "AllocationUnitSize": 4096, "HealthStatus": "Healthy"
+            },
+            {
+                "Number": 2, "Offset": 21 * GIB_I, "Size": 10 * GIB_I,
+                "DriveLetter": "E", "Type": "Basic", "GptType": "", "MbrType": 7,
+                "IsActive": false, "IsBoot": false, "IsSystem": false, "IsHidden": false,
+                "FileSystem": "NTFS", "Label": "",
+                "VolumeSize": 10 * GIB_I, "SizeRemaining": 10 * GIB_I,
+                "AllocationUnitSize": 4096, "HealthStatus": "Healthy"
+            }
+        ]);
+        let d = map_disk(&disk);
+        assert_eq!(d["partitionStyle"], "MBR");
+        assert_eq!(d["interface"], "SATA");
+        let parts = d["partitions"].as_array().unwrap();
+        let gaps: Vec<&Value> = parts.iter().filter(|p| p["type"] == "unallocated").collect();
+        // middle gap (~10 GiB) and trailing gap (rest of the 512 GiB disk)
+        assert_eq!(gaps.len(), 2);
+        let middle = gaps[0]["sizeGB"].as_f64().unwrap();
+        assert!(middle > 9.9 && middle < 10.1, "middle gap was {middle}");
+
+        // Empty disk: everything is one unallocated region
+        let mut empty = sample_gpt_disk();
+        empty["Partitions"] = json!([]);
+        let d = map_disk(&empty);
+        let parts = d["partitions"].as_array().unwrap();
+        assert_eq!(parts.len(), 1);
+        assert_eq!(parts[0]["type"], "unallocated");
+        assert_eq!(parts[0]["sizeGB"], 512.0);
+    }
+
+    #[test]
+    fn single_disk_object_without_array_is_accepted() {
+        // PowerShell returns a bare object instead of an array for one disk;
+        // list_disks normalizes it before mapping (covered there), but the
+        // mapper itself must handle the disk object shape directly.
+        let raw = sample_gpt_disk();
+        assert_eq!(raw["Number"], 0);
+        let d = map_disk(&raw);
+        assert_eq!(d["name"], "Disk 0");
+    }
+
+    fn op(kind: &str, params: Value) -> BackendOp {
+        BackendOp {
+            id: "op-1".to_string(),
+            kind: kind.to_string(),
+            disk_number: 1,
+            partition_number: Some(2),
+            drive_letter: "D".to_string(),
+            params,
+        }
+    }
+
+    #[test]
+    fn resize_script_uses_bytes_and_rejects_moves() {
+        let s = build_op_script(&op("resize_move", json!({"sizeGB": 100.0}))).unwrap();
+        assert!(s.contains("Resize-Partition -DiskNumber 1 -PartitionNumber 2"));
+        assert!(s.contains(&format!("-Size {}", 100 * GIB_I)));
+        let err = build_op_script(&op(
+            "resize_move",
+            json!({"sizeGB": 100.0, "spaceBeforeGB": 5.0}),
+        ))
+        .unwrap_err();
+        assert!(err.contains("start offset"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn create_script_formats_and_escapes_label() {
+        let s = build_op_script(&op(
+            "create",
+            json!({"sizeGB": 50.0, "letter": "E", "filesystem": "NTFS", "name": "Bob's Data", "clusterSizeKB": 8}),
+        ))
+        .unwrap();
+        assert!(s.contains("New-Partition -DiskNumber 1"));
+        assert!(s.contains("-DriveLetter E"));
+        assert!(s.contains("Format-Volume"));
+        assert!(s.contains("-AllocationUnitSize 8192"));
+        assert!(s.contains("'Bob''s Data'"), "label must be PS-escaped: {s}");
+    }
+
+    #[test]
+    fn format_requires_letter_and_known_filesystem() {
+        let mut no_letter = op("format", json!({"filesystem": "NTFS", "volumeLabel": "X"}));
+        no_letter.drive_letter = String::new();
+        assert!(build_op_script(&no_letter).unwrap_err().contains("no drive letter"));
+        let err = build_op_script(&op("format", json!({"filesystem": "HFS+", "volumeLabel": "X"})))
+            .unwrap_err();
+        assert!(err.contains("Unsupported file system"));
+    }
+
+    #[test]
+    fn delete_change_letter_and_set_active_scripts() {
+        assert!(build_op_script(&op("delete", json!({})))
+            .unwrap()
+            .contains("Remove-Partition -DiskNumber 1 -PartitionNumber 2"));
+        assert!(build_op_script(&op("change_letter", json!({"newLetter": "F"})))
+            .unwrap()
+            .contains("-NewDriveLetter F"));
+        let remove = build_op_script(&op("change_letter", json!({"newLetter": ""}))).unwrap();
+        assert!(remove.contains("Remove-PartitionAccessPath"));
+        assert!(build_op_script(&op("set_active", json!({})))
+            .unwrap()
+            .contains("-IsActive $true"));
+    }
+
+    #[test]
+    fn convert_script_refuses_non_empty_disks() {
+        let s = build_op_script(&op("convert_gpt", json!({}))).unwrap();
+        assert!(s.contains("Conversion is only allowed on an empty disk"));
+        assert!(s.contains("convert gpt"));
+    }
+
+    #[test]
+    fn wipe_is_partition_only_and_unknown_ops_are_rejected() {
+        let s = build_op_script(&op("wipe", json!({}))).unwrap();
+        assert!(s.contains("Format-Volume -DriveLetter D"));
+        assert!(s.contains("-Full"));
+        let mut disk_wipe = op("wipe", json!({}));
+        disk_wipe.partition_number = None;
+        assert!(build_op_script(&disk_wipe)
+            .unwrap_err()
+            .contains("not supported"));
+        // Removed tools must never be executable again
+        for kind in ["merge", "split", "clone", "align_4k", "rebuild_mbr"] {
+            assert!(
+                build_op_script(&op(kind, json!({}))).unwrap_err().contains("Unsupported"),
+                "{kind} should be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn letter_and_size_helpers_validate() {
+        assert_eq!(valid_letter("d"), Some('D'));
+        assert_eq!(valid_letter("D:"), Some('D'));
+        assert_eq!(valid_letter(""), None);
+        assert_eq!(valid_letter("DD"), None);
+        assert_eq!(valid_letter("1"), None);
+        assert_eq!(gb_to_bytes(1.0), GIB_I);
+        assert_eq!(ps_quote("a'b"), "'a''b'");
+    }
+}
