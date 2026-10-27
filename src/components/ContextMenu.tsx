@@ -1,17 +1,17 @@
 import React, { useEffect, useRef } from 'react'
 import {
   Sliders,
-  FolderSync,
-  Scissors,
   HardDrive,
   Trash2,
   Eraser,
   Tag,
   CheckCircle,
   ShieldAlert,
-  Copy,
   Plus,
+  Lock,
 } from 'lucide-react'
+import type { Partition, PendingOperation } from '../types/partition'
+import { isWindowsProtected, protectedOpBlockReason } from '../lib/layout'
 
 export interface ContextMenuState {
   x: number
@@ -70,13 +70,6 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
             <Plus className="w-4 h-4 text-blue-600" />
             <span>Create Partition...</span>
           </button>
-          <button
-            onClick={() => onAction('wipe', state.target)}
-            className="w-full text-left px-3 py-[5px] text-xs font-medium flex items-center gap-2.5 text-slate-700 hover:bg-slate-50 transition-colors"
-          >
-            <Eraser className="w-4 h-4 text-slate-500" />
-            <span>Wipe Free Space...</span>
-          </button>
         </>
       )
     }
@@ -85,39 +78,22 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
       return (
         <>
           <button
-            onClick={() => onAction('clone', state.target)}
-            className="w-full text-left px-3 py-[5px] text-xs font-medium flex items-center gap-2.5 text-slate-700 hover:bg-blue-50 hover:text-blue-700 transition-colors"
-          >
-            <Copy className="w-4 h-4 text-blue-600" />
-            <span>Clone Disk...</span>
-          </button>
-          <button
             onClick={() => onAction('convert_gpt', state.target)}
             className="w-full text-left px-3 py-[5px] text-xs font-medium flex items-center gap-2.5 text-slate-700 hover:bg-blue-50 hover:text-blue-700 transition-colors"
           >
             <HardDrive className="w-4 h-4 text-emerald-600" />
             <span>Convert to {state.target?.partitionStyle === 'GPT' ? 'MBR' : 'GPT'} Disk</span>
           </button>
-          <button
-            onClick={() => onAction('rebuild_mbr', state.target)}
-            className="w-full text-left px-3 py-[5px] text-xs font-medium flex items-center gap-2.5 text-slate-700 hover:bg-blue-50 hover:text-blue-700 transition-colors"
-          >
-            <ShieldAlert className="w-4 h-4 text-amber-600" />
-            <span>Rebuild MBR...</span>
-          </button>
-          <div className="my-1 border-t border-slate-100" />
-          <button
-            onClick={() => onAction('wipe', state.target)}
-            className="w-full text-left px-3 py-[5px] text-xs font-medium flex items-center gap-2.5 text-amber-700 hover:bg-amber-50 transition-colors"
-          >
-            <Eraser className="w-4 h-4 text-amber-600" />
-            <span>Wipe Disk...</span>
-          </button>
         </>
       )
     }
 
-    // Partition context items
+    // Partition context items. Format, delete, wipe and drive-letter change
+    // are disabled on the Windows boot/system partition: Windows protects
+    // it, so offering them would only produce a failure at Apply time.
+    const part = state.target as Partition | undefined
+    const blockedReason = (op: PendingOperation['type']) => protectedOpBlockReason(op, part)
+    const blockedCls = 'opacity-40 cursor-not-allowed'
     return (
       <>
         <button
@@ -125,32 +101,22 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
           className="w-full text-left px-3.5 py-2 text-xs font-semibold flex items-center gap-2.5 text-blue-700 hover:bg-blue-50 transition-colors"
         >
           <Sliders className="w-4 h-4 text-blue-600" />
-          <span>Resize / Move...</span>
+          <span>Resize...</span>
         </button>
         <button
-          onClick={() => onAction('merge', state.target)}
-          className="w-full text-left px-3 py-[5px] text-xs font-medium flex items-center gap-2.5 text-slate-700 hover:bg-slate-50 transition-colors"
-        >
-          <FolderSync className="w-4 h-4 text-slate-500" />
-          <span>Merge Partitions...</span>
-        </button>
-        <button
-          onClick={() => onAction('split', state.target)}
-          className="w-full text-left px-3 py-[5px] text-xs font-medium flex items-center gap-2.5 text-slate-700 hover:bg-slate-50 transition-colors"
-        >
-          <Scissors className="w-4 h-4 text-slate-500" />
-          <span>Split Partition...</span>
-        </button>
-        <button
+          disabled={!!blockedReason('format')}
+          title={blockedReason('format') || undefined}
           onClick={() => onAction('format', state.target)}
-          className="w-full text-left px-3 py-[5px] text-xs font-medium flex items-center gap-2.5 text-slate-700 hover:bg-slate-50 transition-colors"
+          className={`w-full text-left px-3 py-[5px] text-xs font-medium flex items-center gap-2.5 text-slate-700 hover:bg-slate-50 transition-colors ${blockedReason('format') ? blockedCls : ''}`}
         >
           <HardDrive className="w-4 h-4 text-slate-500" />
           <span>Format...</span>
         </button>
         <button
+          disabled={!!blockedReason('change_letter')}
+          title={blockedReason('change_letter') || undefined}
           onClick={() => onAction('change_letter', state.target)}
-          className="w-full text-left px-3 py-[5px] text-xs font-medium flex items-center gap-2.5 text-slate-700 hover:bg-slate-50 transition-colors"
+          className={`w-full text-left px-3 py-[5px] text-xs font-medium flex items-center gap-2.5 text-slate-700 hover:bg-slate-50 transition-colors ${blockedReason('change_letter') ? blockedCls : ''}`}
         >
           <Tag className="w-4 h-4 text-slate-500" />
           <span>Change Drive Letter...</span>
@@ -171,19 +137,32 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
           <span>Check File System...</span>
         </button>
         <button
+          disabled={!!blockedReason('wipe')}
+          title={blockedReason('wipe') || undefined}
           onClick={() => onAction('wipe', state.target)}
-          className="w-full text-left px-3 py-[5px] text-xs font-medium flex items-center gap-2.5 text-amber-700 hover:bg-amber-50 transition-colors"
+          className={`w-full text-left px-3 py-[5px] text-xs font-medium flex items-center gap-2.5 text-amber-700 hover:bg-amber-50 transition-colors ${blockedReason('wipe') ? blockedCls : ''}`}
         >
           <Eraser className="w-4 h-4 text-amber-600" />
           <span>Wipe Partition Data...</span>
         </button>
         <button
+          disabled={!!blockedReason('delete')}
+          title={blockedReason('delete') || undefined}
           onClick={() => onAction('delete', state.target)}
-          className="w-full text-left px-3 py-[5px] text-xs font-medium flex items-center gap-2.5 text-rose-700 hover:bg-rose-50 transition-colors"
+          className={`w-full text-left px-3 py-[5px] text-xs font-medium flex items-center gap-2.5 text-rose-700 hover:bg-rose-50 transition-colors ${blockedReason('delete') ? blockedCls : ''}`}
         >
           <Trash2 className="w-4 h-4 text-rose-600" />
           <span>Delete Partition</span>
         </button>
+        {part && isWindowsProtected(part) && (
+          <>
+            <div className="my-1 border-t border-slate-100" />
+            <div className="px-3 py-1.5 text-[10px] leading-snug text-slate-400 flex items-start gap-1.5 max-w-[210px]">
+              <Lock className="w-3 h-3 shrink-0 mt-px" />
+              <span>Windows boot/system partition: format, delete, wipe and letter change are disabled.</span>
+            </div>
+          </>
+        )}
       </>
     )
   }

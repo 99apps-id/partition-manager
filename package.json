@@ -6,9 +6,15 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "desktop:dev": "npm run gen:icons && tauri dev",
+    "desktop:build": "npm run gen:icons && tauri build",
+    "gen:icons": "tauri icon public/partition-manager-icon.png",
+    "test": "vitest run"
   },
   "dependencies": {
+    "@tauri-apps/api": "^2.12.4",
     "framer-motion": "^14.6.0",
     "lucide-react": "^1.61.0",
     "react": "^19.3.1",
@@ -16,11 +22,13 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
+    "@tauri-apps/cli": "^2.12.4",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^4.5.2",
     "tailwindcss": "^4.3.3",
     "typescript": "~5.8.3",
-    "vite": "^6.3.5"
+    "vite": "^6.3.5",
+    "vitest": "^3.2.7"
   }
 }

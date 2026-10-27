@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { LayoutGrid, Plus } from 'lucide-react'
 import { Disk, Partition } from '../types/partition'
+import { isSystemDisk } from '../lib/layout'
 
 interface DiskVisualMapProps {
   disks: Disk[]
@@ -110,6 +111,14 @@ export const DiskVisualMap: React.FC<DiskVisualMapProps> = ({
                 <div className="flex items-center gap-2 min-w-0">
                   <span className={`w-1.5 h-5 rounded-full ${isCurrentDisk ? 'bg-blue-600' : 'bg-slate-300'}`} />
                   <span className="font-bold text-slate-900 text-[13px] whitespace-nowrap">{disk.name}</span>
+                  {isSystemDisk(disk) && (
+                    <span
+                      className="px-1.5 py-0.5 rounded text-[10px] bg-indigo-100 text-indigo-700 border border-indigo-200 font-semibold whitespace-nowrap"
+                      title="This disk hosts the Windows boot/system partition"
+                    >
+                      System disk
+                    </span>
+                  )}
                   <span className="text-slate-500 text-xs truncate hidden lg:inline">{disk.model}</span>
                   <span className="px-1.5 py-0.5 rounded text-[10px] bg-slate-100 text-slate-600 border border-slate-200 font-mono font-semibold whitespace-nowrap">
                     {disk.diskType} · {disk.partitionStyle} · {disk.interface}

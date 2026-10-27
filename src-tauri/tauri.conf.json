@@ -1,0 +1,48 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "app": {
+    "security": {
+      "csp": null
+    },
+    "windows": [
+      {
+        "center": true,
+        "decorations": true,
+        "height": 920,
+        "minHeight": 700,
+        "minWidth": 1100,
+        "resizable": true,
+        "title": "Partition Manager",
+        "width": 1440
+      }
+    ]
+  },
+  "build": {
+    "beforeBuildCommand": "npm run build",
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:3000",
+    "frontendDist": "../build"
+  },
+  "bundle": {
+    "active": true,
+    "category": "Utility",
+    "icon": [
+      "icons/icon.png",
+      "icons/icon.ico"
+    ],
+    "longDescription": "View, create, resize, format and manage disk partitions on Windows using the Windows Storage APIs.",
+    "shortDescription": "Professional partition manager for Windows",
+    "targets": [
+      "nsis",
+      "msi"
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "perMachine"
+      }
+    }
+  },
+  "identifier": "id.apps99.partitionmanager",
+  "productName": "Partition Manager",
+  "version": "1.0.0"
+}

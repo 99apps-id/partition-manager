@@ -7,6 +7,8 @@ export type DiskType = 'Basic' | 'Dynamic'
 
 export interface Partition {
   id: string
+  /** Windows partition number (MSFT_Partition.PartitionNumber). 0 for unallocated regions. */
+  number?: number
   name: string
   letter?: string
   type: PartitionType
@@ -33,18 +35,10 @@ export interface SmartAttribute {
   status: 'OK' | 'Warning' | 'Failing'
 }
 
-export interface BenchmarkResult {
-  readSeqMBs: number
-  writeSeqMBs: number
-  read4kMBs: number
-  write4kMBs: number
-  read4kIOPS: number
-  write4kIOPS: number
-  latencyMs: number
-}
-
 export interface Disk {
   id: string
+  /** Windows disk number (MSFT_Disk.Number). */
+  number?: number
   name: string
   model: string
   serialNumber: string
@@ -60,7 +54,6 @@ export interface Disk {
   totalBytesWrittenTB: number
   partitions: Partition[]
   smartAttributes: SmartAttribute[]
-  benchmark?: BenchmarkResult
   expanded?: boolean
 }
 
@@ -72,17 +65,10 @@ export interface PendingOperation {
     | 'format'
     | 'delete'
     | 'wipe'
-    | 'merge'
-    | 'split'
     | 'change_letter'
     | 'set_active'
     | 'convert_gpt'
     | 'convert_mbr'
-    | 'clone_disk'
-    | 'clone_partition'
-    | 'align_4k'
-    | 'rebuild_mbr'
-    | 'clone'
     | 'chkdsk'
   title: string
   description: string
@@ -94,16 +80,10 @@ export interface PendingOperation {
   createdAt: number
 }
 
-export type ActiveTab =
-  | 'manager'
-  | 'clone'
-  | 'surface-test'
-  | 'smart-health'
-  | 'benchmark'
-  | 'alignment'
+export type ActiveTab = 'manager' | 'smart-health'
 
 export interface PendingConfirm {
-  type: 'set_active' | 'convert_style' | 'rebuild_mbr' | 'chkdsk'
+  type: 'set_active' | 'convert_style' | 'chkdsk'
   diskId: string
   partitionId?: string
   title: string
@@ -119,13 +99,9 @@ export interface ModalState {
     | 'format'
     | 'delete'
     | 'wipe'
-    | 'merge'
-    | 'split'
     | 'change_letter'
     | 'set_active'
-    | 'clone'
     | 'chkdsk'
-    | 'rebuild_mbr'
     | 'convert_gpt'
     | 'apply_progress'
   disk?: Disk

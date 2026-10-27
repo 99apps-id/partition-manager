@@ -1,11 +1,7 @@
 import React from 'react'
 import {
   Layers,
-  Copy,
-  Activity,
   HeartPulse,
-  Gauge,
-  SlidersHorizontal,
   Undo2,
   Redo2,
   Trash2,
@@ -46,11 +42,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
 
   const tabs: { id: ActiveTab; label: string; icon: React.ReactNode }[] = [
     { id: 'manager', label: 'Partition Manager', icon: <Layers className="w-[18px] h-[18px]" /> },
-    { id: 'clone', label: 'Disk Clone', icon: <Copy className="w-[18px] h-[18px]" /> },
-    { id: 'surface-test', label: 'Surface Test', icon: <Activity className="w-[18px] h-[18px]" /> },
     { id: 'smart-health', label: 'Disk Health', icon: <HeartPulse className="w-[18px] h-[18px]" /> },
-    { id: 'benchmark', label: 'Benchmark', icon: <Gauge className="w-[18px] h-[18px]" /> },
-    { id: 'alignment', label: '4K Alignment', icon: <SlidersHorizontal className="w-[18px] h-[18px]" /> },
   ]
 
   return (

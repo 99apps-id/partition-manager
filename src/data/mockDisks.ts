@@ -3,6 +3,7 @@ import { Disk } from '../types/partition'
 export const initialDisks: Disk[] = [
   {
     id: 'disk-0',
+    number: 0,
     name: 'Disk 0',
     model: 'Samsung SSD 980 PRO with Heatsink 1TB',
     serialNumber: 'S5GXNF0R819244K',
@@ -17,15 +18,6 @@ export const initialDisks: Disk[] = [
     powerCycleCount: 512,
     totalBytesWrittenTB: 14.8,
     expanded: true,
-    benchmark: {
-      readSeqMBs: 6980,
-      writeSeqMBs: 5020,
-      read4kMBs: 82.5,
-      write4kMBs: 215.4,
-      read4kIOPS: 850000,
-      write4kIOPS: 640000,
-      latencyMs: 0.03,
-    },
     partitions: [
       {
         id: 'p0-1',
@@ -133,6 +125,7 @@ export const initialDisks: Disk[] = [
   },
   {
     id: 'disk-1',
+    number: 1,
     name: 'Disk 1',
     model: 'Western Digital Blue WD20EZAZ 2TB',
     serialNumber: 'WD-WCC4N7TY8210',
@@ -147,15 +140,6 @@ export const initialDisks: Disk[] = [
     powerCycleCount: 1420,
     totalBytesWrittenTB: 86.4,
     expanded: true,
-    benchmark: {
-      readSeqMBs: 182,
-      writeSeqMBs: 174,
-      read4kMBs: 1.2,
-      write4kMBs: 1.8,
-      read4kIOPS: 290,
-      write4kIOPS: 430,
-      latencyMs: 14.2,
-    },
     partitions: [
       {
         id: 'p1-1',
@@ -225,6 +209,7 @@ export const initialDisks: Disk[] = [
   },
   {
     id: 'disk-2',
+    number: 2,
     name: 'Disk 2',
     model: 'Kingston DataTraveler Max 128GB USB 3.2',
     serialNumber: 'KNG-DTM-991204',
@@ -239,15 +224,6 @@ export const initialDisks: Disk[] = [
     powerCycleCount: 88,
     totalBytesWrittenTB: 1.2,
     expanded: true,
-    benchmark: {
-      readSeqMBs: 980,
-      writeSeqMBs: 840,
-      read4kMBs: 24.1,
-      write4kMBs: 48.6,
-      read4kIOPS: 6200,
-      write4kIOPS: 12400,
-      latencyMs: 0.12,
-    },
     partitions: [
       {
         id: 'p2-1',

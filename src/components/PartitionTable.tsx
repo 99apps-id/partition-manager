@@ -120,6 +120,21 @@ export const PartitionTable: React.FC<PartitionTableProps> = ({
                         style={{ backgroundColor: partColor }}
                       />
                       <span className="font-semibold text-slate-900">{part.name}</span>
+                      {(part.flags || [])
+                        .filter(f => f === 'Boot' || f === 'System')
+                        .map(f => (
+                          <span
+                            key={f}
+                            className="px-1.5 py-0.5 rounded text-[10px] bg-indigo-100 text-indigo-700 border border-indigo-200 font-semibold"
+                            title={
+                              f === 'Boot'
+                                ? 'Windows boot volume -- protected from format, delete, wipe and letter change'
+                                : 'Windows system partition -- protected from format, delete, wipe and letter change'
+                            }
+                          >
+                            {f}
+                          </span>
+                        ))}
                     </div>
                   </td>
 
@@ -214,7 +229,7 @@ export const PartitionTable: React.FC<PartitionTableProps> = ({
                         <>
                           <button
                             onClick={() => onOpenModal('resize_move', part)}
-                            title="Resize / Move Volume"
+                            title="Resize Volume"
                             className="h-7 px-2.5 rounded-md bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 font-semibold text-xs flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
                           >
                             <Sliders className="w-3 h-3" />
